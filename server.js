@@ -4,6 +4,8 @@
 const path = require('path');
 const util = require('util');
 const fs = require('fs');
+const async = require("async");
+
 
 const readFile = util.promisify(fs.readFile);
 const writeFile = util.promisify(fs.writeFile);
@@ -18,7 +20,7 @@ const bodyParser = require('body-parser');
 const logger = require('./middleware/logger');
 
 // declare local constants and helper functions
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 const DATA_DIR = 'data';
 const TAG_RE = /#\w+/g;
 const slugToPath = (slug) => {
@@ -65,10 +67,12 @@ app.get('/api/page/:slug', async (req, res) => {
 //  failure response: {status: 'error', message: 'Could not write page.'}
 app.post('/api/page/:slug', async (req, res) => {
   const filename = slugToPath(req.params.slug);
-  try {
-
+  const fileText = req.body.body
+   try {
+      await writeFile(filename, fileText)
+      res.json({ status: 'ok' });
   } catch (e) {
-
+    res.json({ status: 'error', message: 'Could not write page.' });
   }
 });
 
@@ -79,7 +83,13 @@ app.post('/api/page/:slug', async (req, res) => {
 //  success response: {status:'ok', pages: ['fileName', 'otherFileName']}
 //  failure response: no failure response
 app.get('/api/pages/all', async (req, res) => {
-
+  const fileName = await readDir(DATA_DIR);
+  try{
+    const result = fileName.map(item=> item.split('.').slice(0, -1).join('.'))
+    res.json({status:'ok', pages: result});
+  } catch{
+    console.log('err');
+  }
 });
 
 
@@ -90,7 +100,20 @@ app.get('/api/pages/all', async (req, res) => {
 //  success response: {status:'ok', tags: ['tagName', 'otherTagName']}
 //  failure response: no failure response
 app.get('/api/tags/all', async (req, res) => {
-
+  const fileNames = await readDir(DATA_DIR);
+    const result = fileNames.map(item=> (fs.readFileSync(`${DATA_DIR}/${item}`, 'utf-8')));
+    const matchResult = result.map(item=>{
+      let regex = /(?:^|\s)(?:#)([a-zA-Z\d]+)/gm;
+      let matches = [];
+      let match;
+      while ((match = regex.exec(item))) {
+          matches.push(match[1]);
+      }
+      return matches;
+    })
+    let merged = [...new Set([].concat.apply([], matchResult))];
+    res.json({status:'ok', tags: merged});
+  
 });
 
 
@@ -100,7 +123,25 @@ app.get('/api/tags/all', async (req, res) => {
 //  success response: {status:'ok', tag: 'tagName', pages: ['tagName', 'otherTagName']}
 //  failure response: no failure response
 app.get('/api/tags/:tag', async (req, res) => {
+  const fileName = req.params.tag;
+  const fileNames = await readDir(DATA_DIR);
 
+    const result = [];
+    fileNames.map(item=> {
+       const name = item.split('.').slice(0, -1).join('.');
+       const content = fs.readFileSync(`${DATA_DIR}/${item}`, 'utf-8');
+       const obj= {
+         filename : name,
+         content: content
+       }
+       result.push(obj)
+     })
+
+    const findTagName = result.filter(item => {
+      return item.content.includes(fileName)
+    }).map(i=>i.filename);
+   
+    res.json({status:'ok', tag: `${fileName}`, pages: findTagName});
 });
 
 
